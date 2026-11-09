@@ -16,36 +16,23 @@ Hệ thống **SmartLab** giải quyết bài toán giám sát, đo lường và
 
 ### 1.1. Các khái niệm cốt lõi & Quy ước kỹ thuật
 * **Occupancy (Số người hiện diện)**: Số lượng người có mặt trong phòng tại một thời điểm lấy mẫu cụ thể. Vì phòng CLB là một **không gian phòng kín (Enclosed Room)**, camera cố định quan sát bao quát toàn phòng nên hệ thống áp dụng cơ chế **Full-Frame Detection (đếm trên toàn bộ khung hình)**, không cần cấu hình đa giác ROI hay lọc điểm neo chân. SmartLab phiên bản đầu tập trung giải quyết bài toán **Occupancy**, không đếm số lượt vào/ra (*Traffic*).
-* **Số người trung bình theo giờ (Hourly Mean Occupancy)**: Chia mỗi giờ thành $3.600$ ô 1 giây. Mỗi ô lưu một số đếm hợp lệ sau khi làm mượt.
-  $$\text{valid\_coverage} = \frac{\text{Số ô có dữ liệu hợp lệ}}{3.600}$$
-  * Giờ đạt chuẩn tính toán/huấn luyện: $\text{valid\_coverage} \ge 90\%$.
-  * Giờ có $\text{valid\_coverage} < 90\%$: Đánh dấu thiếu dữ liệu, **loại khỏi tập nhãn huấn luyện**, không được tự ý gán giá trị $0$.
+* **Số người trung bình theo giờ (Hourly Mean Occupancy)**: Chia mỗi giờ thành 3.600 ô 1 giây. Mỗi ô lưu một số đếm hợp lệ sau khi làm mượt.
+  ```text
+valid_coverage = (Số ô có dữ liệu hợp lệ) / 3600
+```
+  * Giờ đạt chuẩn tính toán/huấn luyện: valid_coverage >= 90%.
+  * Giờ có valid_coverage < 90%: Đánh dấu thiếu dữ liệu, **loại khỏi tập nhãn huấn luyện**, không được tự ý gán giá trị 0.
 * **Định nghĩa "Giờ đông nhất" & "Ngày đông nhất"**:
-  * Giờ đông nhất của một ngày: Giờ hoạt động có số người trung bình ($\text{mean\_count}$) cao nhất.
-  * Ngày đông nhất trong tuần: Ngày có giá trị trung bình cộng $\text{mean\_count}$ trên các **giờ mở cửa thực tế** cao nhất (không tính giờ đóng cửa).
+  * Giờ đông nhất của một ngày: Giờ hoạt động có số người trung bình (mean_count) cao nhất.
+  * Ngày đông nhất trong tuần: Ngày có giá trị trung bình cộng mean_count trên các **giờ mở cửa thực tế** cao nhất (không tính giờ đóng cửa).
 * **Chu kỳ phát hành dự báo tuần tới**:
   * Múi giờ chuẩn: `Asia/Ho_Chi_Minh` (UTC+7).
   * Tuần hoạt động: Bắt đầu từ 00:00 Thứ Hai đến 23:59:59 Chủ Nhật.
-  * Lịch phát hành dự báo: Định kỳ lúc **23:00 Chủ Nhật** hàng tuần. Chỉ được dùng dữ liệu trước mốc cắt này ($\text{data\_cutoff} \le 23:00$ Chủ Nhật). Tuyệt đối ngăn chặn rò rỉ dữ liệu tương lai (*Data Leakage*).
+  * Lịch phát hành dự báo: Định kỳ lúc **23:00 Chủ Nhật** hàng tuần. Chỉ được dùng dữ liệu trước mốc cắt này (data_cutoff <= 23:00 Chủ Nhật). Tuyệt đối ngăn chặn rò rỉ dữ liệu tương lai (*Data Leakage*).
 
 ---
 
 ## 2. Lộ trình phát triển: POC đến MVP (Roadmap & Requirements)
-
-```mermaid
-timeline
-    title Lộ trình tiến hóa SmartLab: POC -> MVP
-    Giai đoạn POC : Kiểm chứng khả thi Vision
-                  : Baseline chuỗi thời gian
-                  : Lưu trữ Local (SQLite/CSV)
-                  : Demo Streamlit cục bộ
-    Giai đoạn MVP : Pipeline Ingestion Camera RTSP thật
-                  : Mô hình GBDT (LightGBM) & Rolling Backtest
-                  : Cloud AWS (S3, RDS PostgreSQL, ECS)
-                  : CI/CD & MLOps tự động hóa qua GitHub Actions
-                  : Dashboard 4 màn hình & Giám sát CloudWatch
-```
-
 ### 2.1. Bảng so sánh phạm vi: POC vs. MVP
 
 | Tiêu chí | Giai đoạn 1: POC (Proof of Concept) | Giai đoạn 2: MVP (Minimum Viable Product) |
@@ -55,7 +42,7 @@ timeline
 | **Xử lý thị giác máy tính** | YOLOv8n pretrained, đếm trên toàn khung hình phòng kín. | YOLOv8n tối ưu với ONNX Runtime/TensorRT, đếm Full-Frame phòng kín, bộ lọc nhiễu trung vị (Median Filter). |
 | **Mô hình dự báo** | Baseline: Cùng giờ tuần trước (Same-Hour Last Week) & Trung bình 4 tuần gần nhất. | LightGBM / XGBoost có Feature Engineering (Lịch, Lag, Rolling stats), tự động so sánh với Baseline qua Rolling Backtest. |
 | **Lưu trữ dữ liệu** | File CSV nội bộ hoặc SQLite cục bộ. | Cơ sở dữ liệu quan hệ **AWS RDS PostgreSQL** chuẩn hóa schema 3NF; DVC lưu trữ snapshots trên **AWS S3**. |
-| **MLOps & Tracking** | Git local commits; logging metric thủ công hoặc local MLflow instance. | **MLflow Model Registry** (Candidate $\to$ Validated $\to$ Production), automated gating, DVC data versioning, Rollback an toàn. |
+| **MLOps & Tracking** | Git local commits; logging metric thủ công hoặc local MLflow instance. | **MLflow Model Registry** (Candidate -> Validated -> Production), automated gating, DVC data versioning, Rollback an toàn. |
 | **Tích hợp GitHub** | Quản lý source code đơn thuần. | **GitHub Actions CI/CD**: Linting, Unit Testing, Docker build & push lên AWS ECR, CML Report tự động trên Pull Request. |
 | **Hạ tầng Cloud** | Máy trạm cục bộ (Local Developer Machine). | **AWS Cloud Infrastructure**: EC2/Edge Worker, ECS Fargate Scheduled Tasks, S3, RDS, CloudWatch Alarms, SNS. |
 | **Dashboard** | Streamlit giao diện đơn giản hiển thị số đếm và biểu đồ cơ bản. | Dashboard 4 phân hệ hoàn chỉnh (Live Status, Historical Trends, Next-Week Forecasts, MLOps Operations & Rollback). |
@@ -73,7 +60,7 @@ Chứng minh rằng: (1) Mô hình Object Detection có thể nhận diện chí
 * `[POC-02]` Xây dựng tập kiểm thử Ground Truth 50 frames gán nhãn thủ công.
 * `[POC-03]` Module Ingestion & Nhận diện người Full-Frame (YOLOv8n).
 * `[POC-04]` Bộ lọc làm mượt trung vị & Tổng hợp Hourly Occupancy (ngưỡng 90% coverage).
-* `[POC-05]` Đánh giá định lượng mô hình đếm (Count MAE $\le 1.8$ người & Error Analysis).
+* `[POC-05]` Đánh giá định lượng mô hình đếm (Count MAE <= 1.8 người & Error Analysis).
 * `[POC-06]` Mô hình dự báo Baseline (Last Week & Rolling Mean, cutoff 23:00 Chủ Nhật).
 * `[POC-07]` Dashboard tương tác POC (Streamlit Local UI 3 tabs).
 * `[POC-08]` Báo cáo nghiệm thu POC & Tiêu chuẩn chuyển giao lên MVP.
@@ -91,11 +78,11 @@ Chứng minh rằng: (1) Mô hình Object Detection có thể nhận diện chí
      * *Baseline 1*: Lấy giá trị của cùng khung giờ ngày hôm trước hoặc tuần trước.
      * *Baseline 2*: Trung bình động 3 chu kỳ gần nhất.
 4. **Evaluation**:
-   * Gán nhãn thủ công (Ground Truth) cho 50 frames ngẫu nhiên phân bổ ở cả cảnh vắng ($< 5$ người) và cảnh đông ($> 15$ người).
-   * Tính toán chỉ số $\text{Count MAE} = \frac{1}{N} \sum |y_{pred} - y_{true}|$.
+   * Gán nhãn thủ công (Ground Truth) cho 50 frames ngẫu nhiên phân bổ ở cả cảnh vắng (< 5 người) và cảnh đông (> 15 người).
+   * Tính toán chỉ số Count MAE = (1/N) * sum(|y_pred - y_true|).
 5. **Definition of Done (DoD) của POC**:
-   * Code chạy được end-to-end từ video $\to$ bảng số liệu CSV $\to$ biểu đồ baseline.
-   * Báo cáo thử nghiệm chứng minh $\text{Count MAE} \le 1.8$ người trên tập 50 frames test.
+   * Code chạy được end-to-end từ video -> bảng số liệu CSV -> biểu đồ baseline.
+   * Báo cáo thử nghiệm chứng minh Count MAE <= 1.8 người trên tập 50 frames test.
    * Giao diện Streamlit POC chạy local hiển thị được video có vẽ bounding box người trong phòng và đồ thị chuỗi thời gian.
 
 ---
@@ -116,7 +103,7 @@ Xây dựng một hệ thống hoàn chỉnh, sẵn sàng vận hành thực t�
 * `[MVP-07]` Feature Engineering chống rò rỉ dữ liệu (Cutoff nghiêm ngặt 23:00 Chủ Nhật).
 * `[MVP-08]` Huấn luyện LightGBM & Framework Rolling Backtest (4 tuần quá khứ).
 * `[MVP-09]` MLflow Model Registry & Automated Gatekeeper (Promotion Rule).
-* `[MVP-10]` Synchronized Safe Rollback Engine ($\le 30$ giây).
+* `[MVP-10]` Synchronized Safe Rollback Engine (<= 30 giây).
 * `[MVP-11]` CI/CD & MLOps Workflows trên GitHub Actions (CML & OIDC).
 * `[MVP-12]` Dashboard 4 phân hệ & API Serving (FastAPI + Streamlit).
 * `[MVP-13]` Nghiệm thu 6 Kịch bản Bắt buộc & Bàn giao Hệ thống.
@@ -129,7 +116,7 @@ Xây dựng một hệ thống hoàn chỉnh, sẵn sàng vận hành thực t�
    * Phát hiện người bằng `YOLOv8n ONNX Runtime` chạy trên CPU/GPU trên toàn bộ khung hình phòng kín (Full-Frame Detection).
    * Làm mượt số đếm thời gian thực bằng Moving Median window (5–10 giây).
    * Lưu từng bản ghi quan sát vào bảng `person_observations`.
-   * Worker định kỳ mỗi 60 phút tổng hợp dữ liệu vào bảng `hourly_occupancy`, áp dụng ngưỡng $90\%$ coverage để xác định cờ `is_eligible`.
+   * Worker định kỳ mỗi 60 phút tổng hợp dữ liệu vào bảng `hourly_occupancy`, áp dụng ngưỡng 90% coverage để xác định cờ `is_eligible`.
 2. **Pipeline B — Automated Weekly Forecasting**:
    * Tự động kích hoạt lúc **23:00 Chủ Nhật hàng tuần** (`Asia/Ho_Chi_Minh`) qua AWS EventBridge / GitHub Actions cron.
    * Áp dụng `data_cutoff = 23:00 Chủ Nhật`. Chỉ truy vấn các dòng có `is_eligible = TRUE` và `observed_at <= data_cutoff`.
@@ -147,10 +134,12 @@ Xây dựng một hệ thống hoàn chỉnh, sẵn sàng vận hành thực t�
 3. **MLOps Layer & Governance**:
    * Quản lý phiên bản dữ liệu bằng **DVC** kết hợp **AWS S3 Bucket**.
    * Quản lý vòng đời mô hình bằng **MLflow Tracking & Model Registry**:
-     * Trạng thái: `Candidate` $\to$ `Validated` $\to$ `Production` $\to$ `Retired`.
+     * Trạng thái: `Candidate` -> `Validated` -> `Production` -> `Retired`.
      * Quản lý riêng biệt phiên bản mô hình đếm (`count_model_vX.Y`) và mô hình dự báo (`forecast_model_vX.Y`).
    * **Automated Deployment Gatekeeper**: Mô hình Candidate chỉ được thăng hạng lên `Production` khi và chỉ khi:
-     $$\text{MAE}_{\text{Candidate}} < \text{MAE}_{\text{Production}} \quad \text{và} \quad \text{Peak Hour Accuracy} \ge \text{Baseline}$$
+     ```text
+MAE(Candidate) < MAE(Production)  và  Peak Hour Accuracy >= Baseline
+```
    * **Cơ chế Rollback an toàn**: Cho phép chuyển đổi ngược lại phiên bản Production trước đó chỉ bằng 1 thao tác (GitHub Actions Dispatch hoặc API endpoint) mà không làm mất lịch sử lỗi hay dự báo cũ.
 4. **Dashboard & Trải nghiệm người dùng (4 Phân hệ)**:
    * **Màn hình 1 — Live Status**: Số người hiện diện hiện tại, thời điểm cập nhật cuối, trạng thái camera (Online/Offline), độ mới dữ liệu (Freshness indicator).
@@ -168,33 +157,32 @@ Xây dựng một hệ thống hoàn chỉnh, sẵn sàng vận hành thực t�
 
 Hệ thống SmartLab phân tách độc lập và kiểm soát chặt chẽ cơ chế retrain giữa hai mô hình:
 
-```mermaid
-flowchart TD
-    subgraph Retrain_Pipeline_B["Pipeline B: Mô hình Dự báo (LightGBM)"]
-        CronSun["23:00 Chủ Nhật hàng tuần"] --> CheckData["Dữ liệu tuần mới đạt valid_coverage >= 90%?"]
-        CheckData -->|Có| TrainCand["Huấn luyện mô hình Candidate mới"]
-        CheckData -->|Không| SkipB["Bỏ qua retrain, dùng Production hiện tại"]
-        TrainCand --> Backtest["Rolling Backtest 4 tuần đối đầu Production"]
-        Backtest --> Gate{"MAE_candidate < MAE_prod & PeakAcc >= Baseline?"}
-        Gate -->|Đạt| PromoteProd["Thăng hạng tag 'Production'"]
-        Gate -->|Không đạt| RejectCand["Từ chối thăng hạng & gửi alert SNS"]
-    end
+```text
+========================================================================================
+[PIPELINE B: RETRAIN MÔ HÌNH DỰ BÁO (LIGHTGBM)]
+23:00 Chủ Nhật hàng tuần -> Kiểm tra dữ liệu tuần mới đạt valid_coverage >= 90%?
+    |-- [CÓ]    -> Huấn luyện mô hình Candidate mới -> Rolling Backtest 4 tuần đối đầu Production
+    |              └── MAE(Candidate) < MAE(Prod) VÀ Peak Accuracy >= Baseline?
+    |                   |-- [ĐẠT]       -> Thăng hạng lên Production trong MLflow Registry
+    |                   └── [KHÔNG ĐẠT] -> Từ chối thăng hạng & gửi cảnh báo qua Amazon SNS
+    └── [KHÔNG] -> Bỏ qua retrain tuần này, tiếp tục dùng Production hiện tại
 
-    subgraph Retrain_Pipeline_A["Pipeline A: Mô hình Đếm người (YOLOv8n)"]
-        Drift["Phát hiện Data/Concept Drift hoặc đổi góc camera"] --> Audit["Kiểm tra thủ công: Count MAE > 1.8 người?"]
-        Audit -->|Có| HumanLabel["Con người gán nhãn thủ công tập ảnh mới"]
-        Audit -->|Không| KeepA["Giữ nguyên mô hình hiện tại"]
-        HumanLabel --> DVC_Snap["Lưu snapshot nhãn qua DVC + S3"]
-        DVC_Snap --> FineTune["Fine-tune YOLOv8n có kiểm soát"]
-        FineTune --> ManualPromote["Đánh giá & Phê duyệt lên Production"]
-    end
+========================================================================================
+[PIPELINE A: RETRAIN MÔ HÌNH ĐẾM NGƯỜI (YOLOV8N - HUMAN-IN-THE-LOOP)]
+Phát hiện Data/Concept Drift hoặc đổi góc camera / ánh sáng
+    └── Kiểm tra thủ công: Count MAE > 1.8 người?
+         |-- [CÓ]   -> Con người gán nhãn thủ công tập ảnh mới (Human-in-the-loop)
+         |             -> Lưu snapshot dữ liệu qua DVC + AWS S3
+         |             -> Fine-tune YOLOv8n có kiểm soát -> Đánh giá & Phê duyệt Production
+         └── [KHÔNG] -> Giữ nguyên mô hình Production hiện tại
+========================================================================================
 ```
 
 1. **Pipeline B (Mô hình Dự báo chuỗi thời gian)**: **CÓ RETRAIN ĐỊNH KỲ HÀNG TUẦN**.
    * Chạy tự động vào 23:00 Chủ Nhật khi có snapshot dữ liệu tuần mới đạt `is_eligible = True`.
    * Mô hình sau khi retrain chỉ ở trạng thái `Candidate`, bắt buộc vượt qua cổng kiểm duyệt `Automated Gatekeeper` (so sánh Rolling Backtest với Production và Baseline) mới được thăng hạng.
 2. **Pipeline A (Mô hình Đếm người Computer Vision)**: **KHÔNG RETRAIN TỰ ĐỘNG MÙ QUÁNG**.
-   * Chỉ retrain/fine-tune theo nhu cầu (On-Demand / Drift-Triggered) khi có sự thay đổi vật lý trong phòng (kê lại bàn ghế, đổi camera, đổi ánh sáng) hoặc sai số trên tập kiểm tra định kỳ vượt ngưỡng ($\text{Count MAE} > 1.8$ người).
+   * Chỉ retrain/fine-tune theo nhu cầu (On-Demand / Drift-Triggered) khi có sự thay đổi vật lý trong phòng (kê lại bàn ghế, đổi camera, đổi ánh sáng) hoặc sai số trên tập kiểm tra định kỳ vượt ngưỡng (Count MAE > 1.8 người).
    * Bắt buộc có con người gán nhãn thủ công (Human-in-the-loop) để đảm bảo độ tin cậy của Ground Truth.
 3. **Nguyên tắc "Không retrain chỉ vì phân phối số người thay đổi"**:
    * Khi phòng CLB đột ngột đông bất thường (do tổ chức Workshop, giải đấu), hệ thống không được vội vàng đưa vào retrain vì sẽ làm biến dạng quy luật chuỗi thời gian bình thường. Cần xác minh nguyên nhân ngoại cảnh trước khi đưa vào tập huấn luyện.
@@ -203,47 +191,60 @@ flowchart TD
 
 ## 3. Kiến trúc hệ thống tổng thể (System Architecture)
 
-```mermaid
-flowchart TD
-    subgraph Edge_or_EC2["Ingestion & Counting Layer (Pipeline A)"]
-        Cam["IP Camera (RTSP Stream)"] --> StreamReader["Stream Ingestion & Frame Validator"]
-        StreamReader -->|"1 FPS Valid Frames"| YOLO["YOLOv8n ONNX Engine\n(Full-Frame Person Detection)"]
-        YOLO --> MedianFilter["Median Smoothing Filter\n(Window: 5-10s)"]
-        MedianFilter --> ObsDB[("AWS RDS PostgreSQL\nperson_observations")]
-        StreamReader -.->|"Stream Offline / Error"| Heartbeat["CloudWatch Heartbeat Alert"]
-    end
-
-    subgraph Data_Aggregator["Hourly Aggregator Service"]
-        ObsDB --> AggJob["Hourly Batch Worker\n(Calculates Coverage & Mean)"]
-        AggJob --> OccupancyDB[("AWS RDS PostgreSQL\nhourly_occupancy")]
-    end
-
-    subgraph MLOps_Forecasting["Forecasting & MLOps Layer (Pipeline B)"]
-        EventBridge["AWS EventBridge Cron\n(Sunday 23:00 ICT)"] --> ForecastWorker["ECS Fargate Forecast Task"]
-        OccupancyDB -->|"Cutoff <= Sun 23:00\nis_eligible = TRUE"| ForecastWorker
-        DVC_S3[("AWS S3 Bucket\n- DVC Data Snapshots\n- Model Registry Artifacts")] <--> ForecastWorker
-        MLflow["MLflow Tracking & Registry\n(EC2 / ECS)"] <--> ForecastWorker
-        ForecastWorker --> EvalGating{"Beats Baseline & Production?"}
-        EvalGating -->|Pass| Promote["Promote to Production Registry"]
-        EvalGating -->|Fail| KeepOld["Keep Current Model & Alert"]
-        Promote --> ForecastDB[("AWS RDS PostgreSQL\nforecast_runs & hourly_forecasts")]
-        KeepOld --> ForecastDB
-    end
-
-    subgraph Serving_Dashboard["API & Dashboard Layer"]
-        FastAPI["FastAPI Backend Service\n(Container on ECS Fargate / App Runner)"]
-        FastAPI <--> ObsDB
-        FastAPI <--> OccupancyDB
-        FastAPI <--> ForecastDB
-        Dashboard["Streamlit / Next.js Dashboard"] <--> FastAPI
-    end
-
-    subgraph GitHub_Ecosystem["CI/CD & MLOps Automation (GitHub)"]
-        GH_Actions["GitHub Actions Workflows"]
-        GH_Actions -->|"Unit Tests & Docker Build"| ECR["AWS ECR (Container Registry)"]
-        GH_Actions -->|"Deploy Updates via OIDC"| ECS_Deploy["AWS ECS Services"]
-        GH_Actions -->|"CML Report Generation"| PR_Comment["GitHub PR Evaluation Report"]
-    end
+```text
++-----------------------------------------------------------------------------------+
+| 1. CAMERA INGESTION & FULL-FRAME COUNTING (PIPELINE A)                            |
+|    [IP Camera (RTSP Stream)]                                                      |
+|         │                                                                         |
+|         ▼ (1 FPS)                                                                 |
+|    [Stream Ingestion & Frame Validator] ──(Offline/Error)──> [CloudWatch Alarm]   |
+|         │                                                                         |
+|         ▼ (Valid Frames)                                                          |
+|    [YOLOv8n ONNX Engine (Full-Frame Person Detection)]                            |
+|         │                                                                         |
+|         ▼ (Raw Counts)                                                            |
+|    [Median Smoothing Filter (Window: 5-10s)]                                      |
+|         │                                                                         |
+|         ▼ (Smoothed Counts)                                                       |
+|    [AWS RDS PostgreSQL: person_observations]                                      |
++-----------------------------------------------------------------------------------+
+                                  │
+                                  ▼ (Chạy định kỳ mỗi 60 phút)
++-----------------------------------------------------------------------------------+
+| 2. HOURLY AGGREGATOR SERVICE                                                      |
+|    [Hourly Batch Worker] -> Tính Coverage & Mean Count -> Gán is_eligible (>=90%) |
+|    -> Lưu vào [AWS RDS PostgreSQL: hourly_occupancy]                              |
++-----------------------------------------------------------------------------------+
+                                  │
+                                  ▼ (Cutoff <= 23:00 Chủ Nhật, is_eligible = True)
++-----------------------------------------------------------------------------------+
+| 3. FORECASTING & MLOPS LAYER (PIPELINE B)                                         |
+|    [AWS EventBridge Cron: 23:00 Chủ Nhật] -> [ECS Fargate Forecast Task]          |
+|         ├── [AWS S3 Bucket: DVC Data Snapshots & Model Artifacts]                 |
+|         ├── [MLflow Tracking & Registry Server]                                   |
+|         ├── [Feature Engineering & LightGBM Training]                             |
+|         └── [Gatekeeper: Kiểm duyệt Candidate vs Production qua Rolling Backtest] |
+|                  ├── [Đạt]       -> Promote lên Production                        |
+|                  └── [Không đạt] -> Giữ nguyên Production                         |
+|         └── Ghi kết quả vào [AWS RDS PostgreSQL: forecast_runs & hourly_forecasts] |
++-----------------------------------------------------------------------------------+
+                                  │
+                                  ▼
++-----------------------------------------------------------------------------------+
+| 4. SERVING & DASHBOARD LAYER                                                      |
+|    [FastAPI Backend Container] <---> [AWS RDS PostgreSQL]                         |
+|         │                                                                         |
+|         ▼                                                                         |
+|    [Streamlit 4-Screen Dashboard] (Live Status | History | Forecast | MLOps)      |
++-----------------------------------------------------------------------------------+
+                                  ▲
+                                  │ (CI/CD Deploy & CML Report)
++-----------------------------------------------------------------------------------+
+| 5. GITHUB ACTIONS ECOSYSTEM                                                       |
+|    [GitHub Actions Workflows] -> Unit Tests & Docker Multi-stage Build            |
+|                               -> Push ECR qua AWS OIDC -> Update ECS Services     |
+|                               -> CML: Báo cáo kết quả đánh giá mô hình vào PR     |
++-----------------------------------------------------------------------------------+
 ```
 
 ---
@@ -280,8 +281,8 @@ Hệ thống tận dụng tối đa hệ sinh thái của GitHub để thiết l
      * Kiểm tra kiểu tĩnh với `mypy`.
      * Quét lỗ hổng bảo mật dependency với `safety` hoặc `pip-audit`.
    * **Job 2: Automated Testing**:
-     * Chạy toàn bộ unit tests và integration tests bằng `pytest` với coverage tối thiểu $\ge 80\%$.
-     * Kiểm tra tính toàn vẹn của logic nhận diện Full-Frame và thuật toán tổng hợp ngưỡng $90\%$.
+     * Chạy toàn bộ unit tests và integration tests bằng `pytest` với coverage tối thiểu >= 80%.
+     * Kiểm tra tính toàn vẹn của logic nhận diện Full-Frame và thuật toán tổng hợp ngưỡng 90%.
    * **Job 3: Container Build & Push**:
      * Build Docker images tối ưu hóa đa tầng (multi-stage builds) cho Camera Worker, Forecast Worker và Dashboard.
      * Sử dụng **GitHub OIDC** để xác thực với AWS mà **không cần lưu trữ AWS Access Key tĩnh**.
@@ -330,39 +331,39 @@ jobs:
 
 ### 4.3. Tích hợp sâu với Amazon Web Services (AWS Integration)
 
-```mermaid
-flowchart LR
-    subgraph AWS_Cloud["AWS Architecture (Region: ap-southeast-1)"]
-        subgraph Storage_Layer["Storage & Data"]
-            S3_Bucket[("AWS S3\n- dvc-storage/\n- mlflow-artifacts/\n- manual-test-clips/")]
-            RDS_DB[("AWS RDS PostgreSQL 16\n(Multi-AZ or db.t4g.micro)\n- observations\n- hourly_occupancy\n- forecasts")]
-        end
+```text
+====================================================================================
+                        AWS ARCHITECTURE (Region: ap-southeast-1)
+====================================================================================
 
-        subgraph Compute_Layer["Compute & Container Serving"]
-            Worker_EC2["AWS EC2 / Local Edge\n(Camera Ingestion Worker)"]
-            ECS_Cluster["AWS ECS Fargate Cluster"]
-            ECS_Task1["Scheduled Task: Weekly Forecast\n(Sunday 23:00)"]
-            ECS_Task2["Web Service: FastAPI + Dashboard\n(Port 8000 & 8501)"]
-            ECS_Cluster --> ECS_Task1
-            ECS_Cluster --> ECS_Task2
-        end
+  [Local Edge / EC2 Camera Worker]
+        │
+        ├──(Write Raw Counts)────────────┐
+        └──(Heartbeat Ping 1/min)──┐     │
+                                   ▼     ▼
+  [CloudWatch Logs & Metrics]   [AWS RDS PostgreSQL 16]
+        │                       - person_observations
+        ▼                       - hourly_occupancy
+  [CloudWatch Alarm]            - forecast_runs & hourly_forecasts
+        │                            ▲         ▲
+  (Trigger if >3m no ping)           │         │
+        ▼                            │         │ (Read Only)
+  [Amazon SNS Topic]                 │         │
+        │                            │         ▼
+   (Email / Telegram)                │    [ECS Fargate: FastAPI + Dashboard]
+                                     │    (Serving Ports 8000 & 8501)
+                                     │
+  [EventBridge Cron (23:00 CN)] ─────┼─────────┐
+                                     │         │ (Run Scheduled Task)
+                                     ▼         ▼
+  [AWS S3 Bucket] <─────────── [ECS Fargate: Weekly Forecast Task]
+  - dvc-storage/
+  - mlflow-artifacts/
+  - manual-test-clips/
 
-        subgraph Monitoring_Security["Security & Observability"]
-            IAM_Role["IAM Roles (OIDC for GitHub Actions)"]
-            Secrets["AWS Secrets Manager / SSM"]
-            CW_Logs["CloudWatch Logs & Metrics"]
-            SNS_Alert["Amazon SNS\n(Email/Telegram Alarms)"]
-        end
-    end
-
-    Worker_EC2 -->|"Write Raw Counts"| RDS_DB
-    Worker_EC2 -->|"Heartbeat Ping"| CW_Logs
-    ECS_Task1 -->|"Fetch Data & Write Predictions"| RDS_DB
-    ECS_Task1 <-->|"Save/Load Models"| S3_Bucket
-    ECS_Task2 -->|"Read Only"| RDS_DB
-    CW_Logs -->|"Trigger on Metric Alarm"| SNS_Alert
-    IAM_Role -.->|"Grant Least-Privilege"| Compute_Layer
-    Secrets -.->|"Inject DB & RTSP Credentials"| Compute_Layer
+  [AWS IAM OIDC Role] ───────> Kết nối bảo mật không dùng static keys từ GitHub Actions
+  [AWS Secrets Manager] ─────> Tiêm thông tin bảo mật (DB Credentials, RTSP URL)
+====================================================================================
 ```
 
 1. **AWS S3 (Simple Storage Service)**:
@@ -377,8 +378,8 @@ flowchart LR
    * **Weekly Forecasting Scheduled Task**: Định cấu hình EventBridge rule chạy task ECS Fargate lúc 23:00 Chủ Nhật. Khởi động container, thực hiện feature engineering, rolling backtest, ghi dự báo và tắt container để tối ưu chi phí.
    * **Web API & Dashboard Service**: Chạy container dịch vụ FastAPI và Dashboard liên tục, kết nối qua Application Load Balancer (ALB).
 4. **AWS CloudWatch & Amazon SNS (Monitoring & Alerting)**:
-   * **Heartbeat Alarm**: Camera worker gửi heartbeat metric lên CloudWatch mỗi phút. Nếu thiếu 3 chu kỳ liên tiếp ($> 3$ phút), CloudWatch Alarm sẽ kích hoạt SNS gửi thông báo đến ban quản trị CLB qua Email/Telegram.
-   * **Data Drift / Coverage Alarm**: Cảnh báo khi một ngày có quá $3$ giờ bị đánh dấu thiếu dữ liệu ($\text{valid\_coverage} < 90\%$).
+   * **Heartbeat Alarm**: Camera worker gửi heartbeat metric lên CloudWatch mỗi phút. Nếu thiếu 3 chu kỳ liên tiếp (> 3 phút), CloudWatch Alarm sẽ kích hoạt SNS gửi thông báo đến ban quản trị CLB qua Email/Telegram.
+   * **Data Drift / Coverage Alarm**: Cảnh báo khi một ngày có quá 3 giờ bị đánh dấu thiếu dữ liệu (valid_coverage < 90%).
 5. **AWS Secrets Manager & IAM Roles**:
    * Quản lý tập trung chuỗi kết nối Database, mật khẩu RTSP Camera và token dịch vụ.
    * Phân quyền IAM theo nguyên tắc đặc quyền tối thiểu (Least Privilege).
@@ -389,63 +390,76 @@ flowchart LR
 
 CSDL được thiết kế chuẩn hóa trên PostgreSQL để phục vụ trơn tru cả 2 pipeline:
 
-```mermaid
-erDiagram
-    CAMERAS ||--o{ PERSON_OBSERVATIONS : records
-    ROOMS ||--o{ HOURLY_OCCUPANCY : aggregates
-    ROOMS ||--o{ ROOM_SCHEDULES : governs
-    ROOMS ||--o{ EVENT_SCHEDULES : hosts
-    FORECAST_RUNS ||--o{ HOURLY_FORECASTS : generates
+```text
+====================================================================================
+                            RELATIONAL DATABASE SCHEMA
+====================================================================================
 
-    CAMERAS {
-        varchar camera_id PK
-        varchar room_id FK
-        varchar stream_url
-        varchar status
-        timestamp last_heartbeat_at
-    }
+[CAMERAS]
+  - camera_id: VARCHAR (PK)
+  - room_id: VARCHAR (FK -> ROOMS.room_id)
+  - stream_url: VARCHAR
+  - status: VARCHAR
+  - last_heartbeat_at: TIMESTAMP
 
-    PERSON_OBSERVATIONS {
-        bigserial id PK
-        varchar camera_id FK
-        timestamp observed_at
-        integer raw_count
-        float smoothed_count
-        varchar quality_status
-        varchar count_model_version
-        varchar camera_config_version
-    }
+      │ 1
+      │
+      │ N
+      ▼
+[PERSON_OBSERVATIONS]
+  - id: BIGSERIAL (PK)
+  - camera_id: VARCHAR (FK -> CAMERAS.camera_id)
+  - observed_at: TIMESTAMP (Indexed)
+  - raw_count: INTEGER (NULL nếu lỗi)
+  - smoothed_count: FLOAT (NULL nếu lỗi)
+  - quality_status: VARCHAR (VALID, FRAME_DECODE_ERROR, STALE_DATA, CAMERA_OFFLINE)
+  - count_model_version: VARCHAR
+  - camera_config_version: VARCHAR
 
-    HOURLY_OCCUPANCY {
-        bigserial id PK
-        varchar room_id FK
-        timestamp hour_start
-        float mean_count
-        integer max_count
-        float valid_coverage
-        boolean is_open
-        boolean is_eligible
-        varchar aggregation_version
-    }
+------------------------------------------------------------------------------------
 
-    FORECAST_RUNS {
-        varchar forecast_run_id PK
-        timestamp issued_at
-        timestamp data_cutoff
-        varchar forecast_model_version
-        varchar feature_version
-        varchar status
-        float test_mae
-    }
+[ROOMS]
+  - room_id: VARCHAR (PK)
+  - room_name: VARCHAR
 
-    HOURLY_FORECASTS {
-        bigserial id PK
-        varchar forecast_run_id FK
-        varchar room_id FK
-        timestamp target_hour
-        float predicted_mean_count
-        boolean is_peak_hour_of_day
-    }
+      │ 1
+      │
+      │ N
+      ▼
+[HOURLY_OCCUPANCY]
+  - id: BIGSERIAL (PK)
+  - room_id: VARCHAR (FK -> ROOMS.room_id)
+  - hour_start: TIMESTAMP (Indexed, UNIQUE với room_id)
+  - mean_count: FLOAT
+  - max_count: INTEGER
+  - valid_coverage: FLOAT (Tỷ lệ [0.0, 1.0])
+  - is_open: BOOLEAN
+  - is_eligible: BOOLEAN (valid_coverage >= 0.90 AND is_open == True)
+  - aggregation_version: VARCHAR
+
+------------------------------------------------------------------------------------
+
+[FORECAST_RUNS]
+  - forecast_run_id: VARCHAR (PK)
+  - issued_at: TIMESTAMP
+  - data_cutoff: TIMESTAMP (Chặn rò rỉ dữ liệu)
+  - forecast_model_version: VARCHAR
+  - feature_version: VARCHAR
+  - status: VARCHAR
+  - test_mae: FLOAT
+
+      │ 1
+      │
+      │ N
+      ▼
+[HOURLY_FORECASTS]
+  - id: BIGSERIAL (PK)
+  - forecast_run_id: VARCHAR (FK -> FORECAST_RUNS.forecast_run_id)
+  - room_id: VARCHAR (FK -> ROOMS.room_id)
+  - target_hour: TIMESTAMP (Indexed)
+  - predicted_mean_count: FLOAT
+  - is_peak_hour_of_day: BOOLEAN
+====================================================================================
 ```
 
 ### Chi tiết các trường dữ liệu quan trọng:
@@ -455,7 +469,7 @@ erDiagram
   * `quality_status`: Trạng thái khung hình (`VALID`, `FRAME_DECODE_ERROR`, `STALE_DATA`, `CAMERA_OFFLINE`). Nếu lỗi, `raw_count` và `smoothed_count` nhận giá trị `NULL`.
 * `hourly_occupancy`:
   * `hour_start`: Thời điểm bắt đầu giờ (ví dụ: `2026-11-09 08:00:00+07`).
-  * `valid_coverage`: Tỷ lệ phần trăm ô hợp lệ trong giờ ($[0.0, 1.0]$).
+  * `valid_coverage`: Tỷ lệ phần trăm ô hợp lệ trong giờ ([0.0, 1.0]).
   * `is_eligible`: Cờ boolean đánh dấu giờ này có hợp lệ để đưa vào huấn luyện hay không (bắt buộc `valid_coverage >= 0.90` và `is_open = TRUE`).
 * `forecast_runs`:
   * `forecast_run_id`: Định danh duy nhất cho mỗi đợt chạy dự báo (ví dụ: `fcr_20261109_230000`).
@@ -468,25 +482,31 @@ erDiagram
 ### 6.1. Metric đánh giá mô hình đếm người (Pipeline A)
 Đánh giá trên tập dữ liệu kiểm thử được gán nhãn thủ công (ít nhất 100 khung hình/đoạn clip bao phủ đa dạng điều kiện ánh sáng, góc nghiêng và mật độ người):
 1. **Count MAE (Mean Absolute Error)**:
-   $$\text{Count MAE} = \frac{1}{N} \sum_{i=1}^N \left| \hat{y}_i - y_i \right| \quad (\text{Mục tiêu: } \le 1.2 \text{ người})$$
+   ```text
+Count MAE = (1/N) * sum(|y_pred_i - y_true_i|)    (Mục tiêu: <= 1.2 người)
+```
 2. **Crowded Scene MAE**:
-   Sai số tuyệt đối trung bình trên các khung hình có trên 15 người $(\text{Mục tiêu: } \le 2.0 \text{ người})$.
+   Sai số tuyệt đối trung bình trên các khung hình có trên 15 người (Mục tiêu: <= 2.0 người).
 3. **Inference Latency & FPS**:
-   Thời gian xử lý 1 khung hình $\le 80\text{ms}$ trên CPU hoặc $\le 20\text{ms}$ trên GPU.
+   Thời gian xử lý 1 khung hình <= 80ms trên CPU hoặc <= 20ms trên GPU.
 
 ### 6.2. Metric đánh giá mô hình dự báo (Pipeline B)
 Đánh giá qua **Rolling Backtest** trên tối thiểu 4 tuần quá khứ độc lập:
 1. **Hourly MAE**:
-   $$\text{MAE}_{\text{hourly}} = \frac{1}{M} \sum_{j=1}^M \left| \hat{O}_j - O_j \right|$$
+   ```text
+MAE_hourly = (1/M) * sum(|O_pred_j - O_true_j|)
+```
    *(Chỉ tính toán trên các giờ có `is_eligible = TRUE`)*.
 2. **Peak Hour Accuracy (Độ đúng giờ cao điểm)**:
    Tỷ lệ ngày chọn chính xác giờ có số người trung bình cao nhất thực tế.
-3. **Peak Hour $\pm 1$ Hour Accuracy**:
+3. **Peak Hour +/- 1 Hour Accuracy**:
    Tỷ lệ ngày chọn giờ cao điểm dự báo cách đỉnh thực tế không quá 1 giờ.
 4. **Peak Regret**:
    Mức chênh lệch giữa số người trung bình thực tế tại đỉnh thật và số người thực tế tại giờ mà mô hình chọn:
-   $$\text{Peak Regret} = O_{\text{actual\_peak}} - O_{\text{predicted\_peak}}$$
-   *(Mục tiêu: $\text{Peak Regret} \le 1.5$ người)*.
+   ```text
+Peak Regret = Actual_Occupancy(true_peak) - Actual_Occupancy(predicted_peak)
+```
+   *(Mục tiêu: Peak Regret <= 1.5 người)*.
 
 ---
 
@@ -494,14 +514,13 @@ erDiagram
 
 Hệ thống MVP chỉ được coi là hoàn thiện khi vượt qua đầy đủ 6 kịch bản thực nghiệm sau:
 
-```mermaid
-graph TD
-    S1["Scenario 1: Camera bình thường"] -->|Hiển thị số đếm live & ghi DB| PASS1[PASS]
-    S2["Scenario 2: Rút dây mạng Camera"] -->|Không biến thành 0; Báo STREAM_OFFLINE| PASS2[PASS]
-    S3["Scenario 3: Mất dữ liệu > 10%"] -->|Đánh dấu is_eligible=FALSE, loại khỏi train| PASS3[PASS]
-    S4["Scenario 4: Chạy Forecast 23:00 CN"] -->|Sinh dự báo 84h, tìm ngày/giờ đỉnh| PASS4[PASS]
-    S5["Scenario 5: Ứng viên kém hơn Baseline"] -->|Bị Gatekeeper từ chối thăng hạng| PASS5[PASS]
-    S6["Scenario 6: Thử nghiệm Rollback"] -->|Chuyển về Model vX-1 ngay lập tức| PASS6[PASS]
+```text
+[Kịch bản 1: Camera bình thường]       --> Hiển thị số đếm live & ghi CSDL       --> PASS
+[Kịch bản 2: Rút dây mạng camera]       --> Không biến thành 0; Báo CAMERA_OFFLINE --> PASS
+[Kịch bản 3: Mất dữ liệu > 10%]        --> Đánh dấu is_eligible=FALSE, loại train --> PASS
+[Kịch bản 4: Chạy Forecast 23:00 CN]   --> Sinh dự báo 84h, tìm ngày/giờ cao điểm --> PASS
+[Kịch bản 5: Ứng viên kém hơn Baseline] --> Bị Gatekeeper từ chối thăng hạng     --> PASS
+[Kịch bản 6: Thử nghiệm Rollback]      --> Chuyển về Model vX-1 trong <= 30 giây  --> PASS
 ```
 
 1. **Kịch bản 1: Vận hành bình thường (Normal Operation)**:
@@ -509,7 +528,7 @@ graph TD
 2. **Kịch bản 2: Camera mất kết nối (Camera Disconnect Handling)**:
    Ngắt luồng camera mô phỏng. Dashboard lập tức hiển thị trạng thái `CAMERA OFFLINE` kèm thời điểm cập nhật cuối; **tuyệt đối không hiển thị 0 người** và không ghi số 0 vào database.
 3. **Kịch bản 3: Xử lý khoảng thiếu dữ liệu (Missing Data Handling)**:
-   Mô phỏng mất tín hiệu camera 15 phút trong khung giờ (độ phủ chỉ đạt $75\% < 90\%$). Giờ đó tự động bị gán `is_eligible = FALSE` và bị loại khỏi tập huấn luyện mô hình dự báo.
+   Mô phỏng mất tín hiệu camera 15 phút trong khung giờ (độ phủ chỉ đạt 75% < 90%). Giờ đó tự động bị gán `is_eligible = FALSE` và bị loại khỏi tập huấn luyện mô hình dự báo.
 4. **Kịch bản 4: Kích hoạt dự báo tuần mới (Scheduled Forecast Execution)**:
    Chạy job dự báo với mốc cutoff 23:00 Chủ Nhật. Kết quả dự báo 84 giờ tuần kế tiếp được lưu vào CSDL; Dashboard hiển thị bảng Heatmap, chỉ ra chính xác Ngày đông nhất và Giờ cao điểm từng ngày.
 5. **Kịch bản 5: Ngăn chặn triển khai mô hình kém (Model Deployment Gatekeeping)**:

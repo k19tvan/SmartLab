@@ -8,26 +8,25 @@ Tài liệu này chi tiết hóa toàn bộ các yêu cầu của giai đoạn *
 ## 1. Tổng quan kế hoạch Sprint POC
 
 ### 1.1. Mục tiêu tối thượng của POC
-1. **Kiểm chứng khả thi thị giác máy tính toàn khung hình (Full-Frame Vision Feasibility)**: Chứng minh mô hình phát hiện đối tượng (YOLOv8n) phát hiện và đếm chính xác số người hiện diện trong phòng kín với sai số chấp nhận được ($\text{Count MAE} \le 1.8$ người) trên video mẫu thực tế.
-2. **Kiểm chứng khả thi tổng hợp & chuỗi thời gian (Aggregation & Baseline Feasibility)**: Chuẩn hóa quy trình chuyển đổi số đếm thô $\to$ làm mượt trung vị (Median Filter) $\to$ tổng hợp occupancy theo giờ $\to$ áp dụng mô hình dự báo Baseline (Same-Hour Last Week, Rolling Mean).
+1. **Kiểm chứng khả thi thị giác máy tính toàn khung hình (Full-Frame Vision Feasibility)**: Chứng minh mô hình phát hiện đối tượng (YOLOv8n) phát hiện và đếm chính xác số người hiện diện trong phòng kín với sai số chấp nhận được (Count MAE <= 1.8 người) trên video mẫu thực tế.
+2. **Kiểm chứng khả thi tổng hợp & chuỗi thời gian (Aggregation & Baseline Feasibility)**: Chuẩn hóa quy trình chuyển đổi số đếm thô -> làm mượt trung vị (Median Filter) -> tổng hợp occupancy theo giờ -> áp dụng mô hình dự báo Baseline (Same-Hour Last Week, Rolling Mean).
 3. **Sẵn sàng chuyển đổi lên MVP (MVP Readiness Gate)**: Nhận diện các điểm mù (blind spots), tình trạng che khuất khi ngồi sau bàn ghế, hiện tượng ngược sáng từ cửa sổ/đèn trần và chốt bộ tham số tối ưu cho giai đoạn MVP trên AWS.
 
 ### 1.2. Sơ đồ phụ thuộc giữa các Issue (Issue Dependency Graph)
 
-```mermaid
-flowchart TD
-    POC_01["[POC-01] Thu thập video mẫu & Khảo sát góc nhìn phòng kín"] --> POC_02["[POC-02] Xây dựng tập kiểm thử Ground Truth 50 frames"]
-    POC_01 --> POC_03["[POC-03] Module Ingestion & Nhận diện người Full-Frame (YOLOv8n)"]
-    POC_03 --> POC_04["[POC-04] Bộ lọc làm mượt trung vị & Tổng hợp Hourly Occupancy"]
-    POC_02 --> POC_05["[POC-05] Đánh giá định lượng mô hình đếm (Count MAE & Error Analysis)"]
-    POC_04 --> POC_05
-    POC_04 --> POC_06["[POC-06] Mô hình dự báo Baseline & Lịch phát hành cutoff"]
-    POC_03 --> POC_07["[POC-07] Dashboard tương tác POC (Streamlit Local UI)"]
-    POC_04 --> POC_07
-    POC_06 --> POC_07
-    POC_05 --> POC_08["[POC-08] Tổng kết nghiệm thu POC & Báo cáo sẵn sàng cho MVP"]
-    POC_06 --> POC_08
-    POC_07 --> POC_08
+```text
++-----------------------------------------------------------------------------------+
+| SƠ ĐỒ PHỤ THUỘC GIỮA CÁC ISSUES TRONG SPRINT POC                                 |
++-----------------------------------------------------------------------------------+
+[POC-01] Thu thập video mẫu & Khảo sát phòng kín
+    |-- [POC-02] Xây dựng tập kiểm thử Ground Truth 50 frames
+    |        └── [POC-05] Đánh giá định lượng mô hình đếm ────────┐
+    └── [POC-03] Ingestion & Nhận diện người Full-Frame (YOLOv8n) │
+             |-- [POC-04] Bộ lọc trung vị & Hourly Occupancy      │
+             |        |-- [POC-05] ───────────────────────────────┼──> [POC-08] Nghiệm thu
+             |        └── [POC-06] Mô hình dự báo Baseline ───────┼──>         và chuyển giao
+             └── [POC-07] Dashboard tương tác Streamlit ──────────┘            lên MVP
++-----------------------------------------------------------------------------------+
 ```
 
 ---
@@ -142,9 +141,11 @@ Xây dựng module đọc video, lấy mẫu khung hình theo tần suất 1 FPS
 2. Xây dựng module `src/vision/detector.py`:
    * Tải mô hình `yolov8n.pt` (PyTorch hoặc ONNX).
    * Lọc chỉ giữ lại class `person` (Class ID 0 trong tập COCO).
-   * Ngưỡng độ tin cậy mặc định: $\text{conf} \ge 0.35$.
+   * Ngưỡng độ tin cậy mặc định: conf >= 0.35.
    * Đếm trực tiếp toàn bộ các bounding boxes người được phát hiện trong khung hình:
-     $$\text{raw\_count} = \sum [\text{class} == 0 \text{ and } \text{conf} \ge 0.35]$$
+     ```text
+raw_count = sum(boxes with class == 0 and conf >= 0.35)
+```
 3. Xuất kết quả từng frame: `frame_idx`, `timestamp`, `raw_count`, danh sách bounding boxes.
 
 #### Ngoài phạm vi (Out of Scope)
@@ -170,7 +171,7 @@ class PersonDetector:
 
 #### Tiêu chí nghiệm thu (Acceptance Criteria)
 - [ ] Chạy lệnh `python -m src.vision.detector --video data/raw_videos/clip_sample.mp4` xử lý trơn tru không lỗi.
-- [ ] Tốc độ suy luận đạt tối thiểu $\ge 15\text{ FPS}$ trên CPU máy tính dev thông thường (nhanh hơn phiên bản có ROI).
+- [ ] Tốc độ suy luận đạt tối thiểu >= 15 FPS trên CPU máy tính dev thông thường (nhanh hơn phiên bản có ROI).
 - [ ] Kết quả xuất ra file CSV tạm `output/poc_raw_counts.csv` gồm: `frame_idx, timestamp_sec, raw_count`.
 - [ ] Unit test `tests/test_vision.py` kiểm tra phát hiện person trên ảnh mẫu hoạt động chính xác.
 
@@ -188,12 +189,12 @@ Số đếm thô (`raw_count`) từng giây thường bị dao động do ngư�
 
 #### Phạm vi công việc (Scope)
 1. Xây dựng module `src/vision/smoother.py`:
-   * Cài đặt bộ lọc trượt trung vị với kích thước cửa sổ $W = 5$ giây (chỉ dùng các quan sát quá khứ $t-4$ đến $t$).
+   * Cài đặt bộ lọc trượt trung vị với kích thước cửa sổ W = 5 giây (chỉ dùng các quan sát quá khứ t-4 đến t).
    * Xuất `smoothed_count = round(median(raw_counts[t-4:t]), 1)`.
 2. Xây dựng module `src/aggregator/poc_aggregator.py`:
    * Đọc chuỗi thời gian `smoothed_count`.
    * Gom nhóm thành các bucket 1 giờ (và bucket 15 phút).
-   * Tính $\text{mean\_count} = \frac{1}{K} \sum \text{smoothed\_count}$, $\text{max\_count} = \max(\text{smoothed\_count})$.
+   * Tính mean_count = (1/K) * sum(smoothed_count), max_count = max(smoothed_count).
    * Tính `valid_coverage = valid_samples / expected_samples`.
    * Quy tắc chuẩn 90%: Nếu `valid_coverage >= 0.90` thì `is_eligible = True`, ngược lại `False`.
 3. Xuất kết quả ra file `data/poc_hourly_occupancy.csv`.
@@ -202,10 +203,10 @@ Số đếm thô (`raw_count`) từng giây thường bị dao động do ngư�
 * Chưa ghi vào cơ sở dữ liệu PostgreSQL (dùng file CSV/DuckDB nội bộ cho POC).
 
 #### Tiêu chí nghiệm thu (Acceptance Criteria)
-- [ ] Dữ liệu sau làm mượt triệt tiêu được các dao động tức thời (ví dụ chuỗi $10, 10, 0, 10, 10 \to 10, 10, 10, 10, 10$).
+- [ ] Dữ liệu sau làm mượt triệt tiêu được các dao động tức thời (ví dụ chuỗi 10, 10, 0, 10, 10 -> 10, 10, 10, 10, 10).
 - [ ] File `data/poc_hourly_occupancy.csv` được sinh ra tự động và đúng schema.
 - [ ] Unit test `tests/test_aggregator.py` kiểm tra:
-  - Khung giờ thiếu $> 10\%$ dữ liệu được gán đúng `is_eligible = False`.
+  - Khung giờ thiếu > 10% dữ liệu được gán đúng `is_eligible = False`.
   - Tuyệt đối không tự ý điền số 0 vào các khoảng thiếu dữ liệu.
 
 ---
@@ -223,13 +224,13 @@ Thực hiện đánh giá định lượng độ chính xác của mô hình đ�
 #### Phạm vi công việc (Scope)
 1. Xây dựng script `src/evaluation/eval_detector.py`:
    * Đọc 50 frames kiểm thử và nhãn ground truth từ `data/ground_truth/poc_ground_truth.json`.
-   * Chạy suy luận Full-Frame trên 50 frames để thu được $\hat{y}_i$.
+   * Chạy suy luận Full-Frame trên 50 frames để thu được y_pred_i.
    * Tính toán các chỉ số:
-     * $\text{Overall Count MAE} = \frac{1}{N} \sum_{i=1}^N |\hat{y}_i - y_i|$.
-     * $\text{Crowded Scene MAE}$ (trên các frames có $y_i \ge 13$).
-     * $\text{Mean Latency}$ (thời gian suy luận trung bình tính bằng ms/frame).
+     * Overall Count MAE = (1/N) * sum(|y_pred_i - y_true_i|).
+     * Crowded Scene MAE (trên các frames có y_true >= 13).
+     * Mean Latency (thời gian suy luận trung bình tính bằng ms/frame).
 2. Xây dựng báo cáo phân tích lỗi (Error Analysis Report):
-   * Tìm top 5 frames có độ lệch lớn nhất $|\hat{y} - y|$.
+   * Tìm top 5 frames có độ lệch lớn nhất |y_pred - y_true|.
    * Lưu ảnh trực quan hóa vào thư mục `docs/reports/poc_errors/`.
    * Đánh giá nguyên nhân: Ngồi khuất sau ghế cao/màn hình máy tính, góc chiếu đèn trần chói sáng.
 3. Xuất file tóm tắt `docs/reports/poc_vision_report.md`.
@@ -237,8 +238,8 @@ Thực hiện đánh giá định lượng độ chính xác của mô hình đ�
 #### Tiêu chí nghiệm thu (Acceptance Criteria)
 - [ ] Chạy `python -m src.evaluation.eval_detector` tự động sinh bảng báo cáo số liệu.
 - [ ] **Chỉ số đạt yêu cầu Definition of Done của POC**:
-  - $\text{Overall Count MAE} \le 1.8$ người.
-  - $\text{Crowded Scene MAE} \le 2.5$ người.
+  - Overall Count MAE <= 1.8 người.
+  - Crowded Scene MAE <= 2.5 người.
 - [ ] File `docs/reports/poc_vision_report.md` phân tích rõ các góc bàn ghế bị khuất và khuyến nghị vị trí gắn camera tối ưu cho MVP.
 
 ---
@@ -257,11 +258,11 @@ Xây dựng và đánh giá 2 mô hình dự báo Baseline trên chuỗi thời 
 1. Chuẩn bị tập dữ liệu chuỗi thời gian occupancy:
    * Kết hợp dữ liệu thực tế từ video mẫu với dữ liệu mô phỏng 4 tuần theo lịch sinh hoạt thực tế của phòng CLB (08:00 – 21:00 hàng ngày, có chu kỳ tuần và ngày nghỉ).
 2. Xây dựng module `src/forecasting/poc_baselines.py`:
-   * **Baseline 1 — Same-Hour Last Week**: Dự báo khung giờ $T$ tuần này bằng đúng giá trị thực tế của khung giờ $T-168h$ (cùng giờ thứ tương ứng tuần trước).
+   * **Baseline 1 — Same-Hour Last Week**: Dự báo khung giờ T tuần này bằng đúng giá trị thực tế của khung giờ T-168h (cùng giờ thứ tương ứng tuần trước).
    * **Baseline 2 — Rolling Mean**: Dự báo bằng trung bình cộng của cùng khung giờ trong 3 tuần gần nhất.
 3. Áp dụng quy tắc xếp hạng:
    * Chỉ xếp hạng trong các giờ mở cửa (`is_open = True`).
-   * Chọn Giờ đông nhất từng ngày ($\max \text{predicted\_mean}$).
+   * Chọn Giờ đông nhất từng ngày (max(predicted_mean)).
    * Tính trung bình ngày và chọn Ngày đông nhất trong tuần.
 4. Đánh giá sai số trên 1 tuần kiểm thử:
    * Tính Hourly MAE của Baseline 1 vs Baseline 2.
@@ -294,9 +295,9 @@ Xây dựng ứng dụng `app_poc.py` gồm 3 màn hình (Tabs):
 2. **Tab 2: Historical Occupancy Trends**:
    * Biểu đồ đường (Line Chart) biểu diễn số người trung bình theo từng giờ trong phòng.
    * Đánh dấu rõ các mốc cao điểm trong ngày.
-   * Cảnh báo các khung giờ bị thiếu dữ liệu ($\text{valid\_coverage} < 90\%$).
+   * Cảnh báo các khung giờ bị thiếu dữ liệu (valid_coverage < 90%).
 3. **Tab 3: Next-Week Forecast & Baseline Benchmark**:
-   * Bảng Heatmap hiển thị số người dự báo cho 7 ngày $\times$ các giờ mở cửa.
+   * Bảng Heatmap hiển thị số người dự báo cho 7 ngày x các giờ mở cửa.
    * Nổi bật **Ngày đông nhất tuần** và **Giờ đông nhất mỗi ngày**.
    * Bảng đối chiếu so sánh kết quả dự báo giữa Baseline 1, Baseline 2 và Thực tế.
 
@@ -319,7 +320,7 @@ Tổng hợp toàn bộ kết quả thử nghiệm thực tế của giai đoạ
 
 #### Phạm vi công việc (Scope)
 1. Soạn thảo tài liệu báo cáo `docs/POC_FINAL_REPORT.md`:
-   * Bảng tổng hợp các metric đã đo đạc ($\text{Count MAE}$, $\text{Latency}$, $\text{Baseline MAE}$, $\text{Peak Regret}$).
+   * Bảng tổng hợp các metric đã đo đạc (Count MAE, Latency, Baseline MAE, Peak Regret).
    * Đánh giá tính khả thi của góc đặt camera hiện tại trong phòng kín (các góc khuất, phản chiếu ánh sáng đèn/cửa sổ).
    * Xác nhận tính ưu việt của Full-Frame Detection so với cấu hình ROI phức tạp trong môi trường phòng kín.
 2. Xây dựng bản khuyến nghị cho MVP:
@@ -331,8 +332,8 @@ Tổng hợp toàn bộ kết quả thử nghiệm thực tế của giai đoạ
 #### Tiêu chí nghiệm thu (Acceptance Criteria)
 - [ ] Báo cáo `docs/POC_FINAL_REPORT.md` hoàn thiện kèm biểu đồ minh họa trích xuất từ `POC-05` và `POC-06`.
 - [ ] Toàn bộ checklist **Definition of Done của POC** được tích xanh:
-  - [x] Code chạy end-to-end từ video $\to$ số đếm $\to$ occupancy $\to$ baseline forecast $\to$ Streamlit UI.
-  - [x] Đạt chỉ số $\text{Count MAE} \le 1.8$ trên tập 50 frames gán nhãn thủ công.
+  - [x] Code chạy end-to-end từ video -> số đếm -> occupancy -> baseline forecast -> Streamlit UI.
+  - [x] Đạt chỉ số Count MAE <= 1.8 trên tập 50 frames gán nhãn thủ công.
   - [x] Baseline forecast không bị rò rỉ dữ liệu tương lai.
 - [ ] Được sự phê duyệt và thống nhất của toàn bộ nhóm để bắt đầu Sprint MVP.
 
@@ -360,8 +361,8 @@ Tổng hợp toàn bộ kết quả thử nghiệm thực tế của giai đoạ
 | Test Case ID | Tình huống kiểm thử | Các bước thực hiện | Kết quả mong đợi |
 | :--- | :--- | :--- | :--- |
 | **`TC-POC-01`** | Kiểm tra nhận diện Full-Frame các vị trí | Đưa vào frame có người ở các vị trí khác nhau trong phòng (gần camera, xa camera, ngồi sau bàn). | Tất cả người nhìn thấy đều được nhận diện bounding box; `raw_count` bằng đúng số người thực tế. |
-| **`TC-POC-02`** | Kiểm tra độ trễ suy luận | Chạy suy luận trên 100 frames liên tiếp trên CPU máy dev. | Tốc độ trung bình $\ge 15\text{ FPS}$ ($\le 66\text{ ms/frame}$). |
-| **`TC-POC-03`** | Kiểm tra khả năng khử nhiễu của Median Filter | Tạo chuỗi số đếm thô có giọt nhiễu đột ngột ($8, 8, 0, 8, 8$ hoặc $8, 8, 20, 8, 8$). | Chuỗi sau lọc làm mượt thành $8, 8, 8, 8, 8$. |
-| **`TC-POC-04`** | Kiểm tra tính chính xác của mô hình đếm | Chạy `eval_detector.py` trên 50 frames gán nhãn thủ công. | $\text{Count MAE} \le 1.8$; $\text{Crowded MAE} \le 2.5$. |
+| **`TC-POC-02`** | Kiểm tra độ trễ suy luận | Chạy suy luận trên 100 frames liên tiếp trên CPU máy dev. | Tốc độ trung bình >= 15 FPS (<= 66 ms/frame). |
+| **`TC-POC-03`** | Kiểm tra khả năng khử nhiễu của Median Filter | Tạo chuỗi số đếm thô có giọt nhiễu đột ngột (8, 8, 0, 8, 8 hoặc 8, 8, 20, 8, 8). | Chuỗi sau lọc làm mượt thành 8, 8, 8, 8, 8. |
+| **`TC-POC-04`** | Kiểm tra tính chính xác của mô hình đếm | Chạy `eval_detector.py` trên 50 frames gán nhãn thủ công. | Count MAE <= 1.8; Crowded MAE <= 2.5. |
 | **`TC-POC-05`** | Kiểm tra ngăn ngừa rò rỉ dữ liệu dự báo | Chạy script baseline với cutoff Chủ Nhật 23:00; kiểm tra dữ liệu đầu vào. | Tuyệt đối không có bản ghi nào sau mốc 23:00 được đưa vào feature. |
 | **`TC-POC-06`** | Khởi chạy giao diện Streamlit | Chạy `streamlit run app_poc.py`. | Mở trình duyệt hiển thị đầy đủ 3 tabs, video play được và biểu đồ render đúng. |
